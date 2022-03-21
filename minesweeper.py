@@ -1,6 +1,5 @@
 import itertools
 import random
-import copy
 
 
 class Minesweeper():
@@ -109,9 +108,7 @@ class Sentence():
         # TODO
         mines = set()
         if len(self.cells) == self.count != 0:
-            mines = self.cells  # creates same pointer in memory?
-            # for cell in self.cells:  # Hopefully this creates separate object
-            #     mines.add(cell)
+            mines = self.cells
         return mines
 
     def known_safes(self):
@@ -121,10 +118,7 @@ class Sentence():
         # TODO
         safes = set()
         if self.cells != set() and self.count == 0:
-            safes = self.cells  # creates same pointer in memory causing  RuntimeError('Set changed size during
-            # iteration')?
-            # for cell in self.cells:  # After this change, the program freezes and I don't know what is causing it
-            #     safes.add(cell)
+            safes = self.cells
         return safes
 
     def mark_mine(self, cell):
@@ -206,45 +200,30 @@ class MinesweeperAI():
         self.moves_made.add(cell)
 
         #  2) mark the cell as safe
-        self.mark_safe(cell)  # adds to self.safes & runs sentence.mark_safe on all sentences in knowledge
+        # self.mark_safe(cell)  # adds to self.safes & runs sentence.mark_safe on all sentences in knowledge
+        self.safes.add(cell)  # add to safes first and then mark as safe later
 
         #  Identify neighbors
         neighbors = set()
         for d_row in range(-1, 2):
             for d_col in range(-1, 2):
-                if d_row != 0 and d_col != 0:
-                    n_row = cell[0] + d_row
-                    n_col = cell[1] + d_col
-                    if n_row in range(self.height) and n_col in range(self.width):
-                        neighbors.add((n_row, n_col))
+                n_row = cell[0] + d_row
+                n_col = cell[1] + d_col
+                if (n_row, n_col) != cell and n_row in range(self.height) and n_col in range(self.width):
+                    neighbors.add((n_row, n_col))
 
         # Process neighboring mines
-        neighboring_mines = neighbors.intersection(self.mines)
-        for c in neighboring_mines:
-            self.mark_mine(c)
-            if count > 0:
-                count -= 1
-            else:
-                break
-
-        neighbors.difference_update(self.mines)  # exclude identified mines from neighbors
-
-        # Process neighboring safes
-        neighboring_safes = neighbors.intersection(self.safes)
-        [self.mark_safe(c) for c in neighboring_safes]  # mark_safe all neighboring safes
-        neighbors.difference_update(self.safes)  # exclude identified safes from remaining neighbors
-
+        count -= len(neighbors.intersection(self.mines))  # update count to reflect identified mines
+        neighbors.difference_update(self.mines)  # update neighbors to exclude identified mines
+        neighbors.difference_update(self.safes)  # update neighbors to exclude identified safes
         #  Case when remaining neighboring cells are mine
         if len(neighbors) == count != 0:
-            for c in neighbors:
-                if c not in self.mines:
-                    self.mark_mine(c)  # adds to self.mines & runs sentence.mark_mine on all sentences in knowledge
+            self.mines = self.mines.union(neighbors)
+            count = 0  # if all neighboring cells are mine then count should be zero
         #  Case when all cells are safe
         elif neighbors != set() and count == 0:
-            for c in neighbors:
-                if c not in self.safes:
-                    self.mark_safe(c)  # adds to self.safes & runs sentence.mark_safe on all sentences in knowledge
-        #  Surviving neighboring cells are undertermined
+            self.safes = self.safes.union(neighbors)
+        #  Process neighboring cells
         else:
             #  3) add a new sentence to the AI's knowledge base
             #                based on the value of `cell` and `count`
@@ -254,53 +233,27 @@ class MinesweeperAI():
 
         #  4) mark any additional cells as safe or as mines
         #                if it can be concluded based on the AI's knowledge base
+        safes = self.safes
+        mines = self.mines
+        #  Actually mark cells as safe or mines
+        [self.mark_safe(c) for c in safes]
+        [self.mark_mine(c) for c in mines]
 
-
-        # curr_knowledge = copy.deepcopy(self.knowledge)  # is this allowed? this seems to fix the problem of size change
-        # # curr_knowledge = self.knowledge
-        #
-        # for s in curr_knowledge:
-        #     if s.cells != set():
-        #         safes = s.known_safes()
-        #         mines = s.known_mines()
-        #         [self.mark_safe(safe) for safe in safes if safes != set()]
-        #         [self.mark_mine(mine) for mine in mines if mines != set()]
-        #     else:
-        #         self.knowledge.remove(s)  # remove s from the real self.knowledge
-        #  Try to conclude safe and mines from existing knowledge
-        # for s in self.knowledge:
-        #     if s.known_safes() != set():
-        #         self.safes.union(s.known_safes())  # merge to master safes
-        #     if s.known_mines() != set():
-        #         self.mines.union(s.known_mines())  # merge to master mines
-        #
-        # safes = self.safes
-        # mines = self.mines
-        # #  Actually mark cells as safe or mines
-        # [self.mark_safe(c) for c in safes]
-        # [self.mark_mine(c) for c in mines]
-        #
-        # #  Delete empty sets
-        # [x for x in self.knowledge if x.cells != set()]
-
+        #  Delete empty sets
+        self.knowledge = [x for x in self.knowledge if x.cells != set()]
 
         #  5) add any new sentences to the AI's knowledge base
         #                if they can be inferred from existing knowledge
         #  Infer new knowledge based on subsets on existing sentences
-        # temp_knowledge = []
-        # a_cnt = 0
-        # for a in self.knowledge:
-        #     a_cnt += 1
-        #     b_cnt = 0
-        #     for b in self.knowledge:
-        #         b_cnt += 1
-        #         if a != b:
-        #             if a.cells.issubset(b.cells):
-        #                 temp_knowledge.append(Sentence(b.cells - a.cells, b.count - a.count))
-        #             if b.cells.issubset(a.cells):
-        #                 temp_knowledge.append(Sentence(a.cells - b.cells, a.count - b.count))
-        #
-        # [self.knowledge.append(s) for s in temp_knowledge if s not in self.knowledge]  # merge with real knowledge
+        temp_knowledge = []
+        for a in self.knowledge:
+            for b in self.knowledge:
+                if a != b:
+                    if a.cells.issubset(b.cells):
+                        temp_knowledge.append(Sentence(b.cells - a.cells, b.count - a.count))
+                    if b.cells.issubset(a.cells):
+                        temp_knowledge.append(Sentence(a.cells - b.cells, a.count - b.count))
+        [self.knowledge.append(s) for s in temp_knowledge if s not in self.knowledge]  # merge with real knowledge
 
     def make_safe_move(self):
         """
@@ -312,8 +265,8 @@ class MinesweeperAI():
         and self.moves_made, but should not modify any of those values.
         """
         # TODO
-        for safe in self.safes:
-            if safe not in self.moves_made:
+        if self.safes.difference(self.moves_made):
+            for safe in self.safes.difference(self.moves_made):
                 return safe
         return None
 
@@ -334,4 +287,3 @@ class MinesweeperAI():
             return random.choice(tuple(moves_remain))
         else:
             return None
-
